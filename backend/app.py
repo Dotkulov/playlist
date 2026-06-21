@@ -7,9 +7,11 @@ import database
 app = Flask(__name__)
 CORS(app)
 
+# Настройки загрузки
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'mp3', 'wav', 'ogg'}
 
+# Создаем папку для загрузок
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
@@ -38,6 +40,48 @@ def add_song():
     )
     return jsonify({'id': new_id, 'message': 'Song added successfully'}), 201
 
+@app.route('/api/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    if not allowed_file(file.filename):
+        return jsonify({'error': 'Invalid file type. Only MP3, WAV, OGG allowed'}), 400
+    
+    ext = file.filename.rsplit('.', 1)[1].lower()
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(filepath)
+    
+    # Для Render используем внешний URL
+    if os.environ.get('RENDER'):
+        base_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://your-app.onrender.com')
+        file_url = f"{base_url}/uploads/{filename}"
+    else:
+        file_url = f"http://localhost:5000/uploads/{filename}"
+    
+    return jsonify({'url': file_url, 'filename': filename}), 201
+
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route('/api/songs/<int:song_id>', methods=['DELETE'])
+def delete_song(song_id):
+    filename = database.delete_song(song_id)
+    if filename:
+        try:
+            os.remove(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        except:
+            pass
+        return jsonify({'message': 'Song deleted successfully'}), 200
+    else:
+        return jsonify({'error': 'Song not found'}), 404
+
 @app.route('/api/songs/<int:song_id>', methods=['PUT'])
 def update_song(song_id):
     data = request.get_json()
@@ -57,41 +101,6 @@ def update_song(song_id):
     else:
         return jsonify({'error': 'Song not found'}), 404
 
-@app.route('/api/upload', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-    
-    if not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file type. Only MP3, WAV, OGG allowed'}), 400
-    
-    ext = file.filename.rsplit('.', 1)[1].lower()
-    filename = f"{uuid.uuid4().hex}.{ext}"
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(filepath)
-    
-    file_url = f"http://localhost:5000/uploads/{filename}"
-    return jsonify({'url': file_url, 'filename': filename}), 201
-
-@app.route('/uploads/<filename>')
-def uploaded_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
-@app.route('/api/songs/<int:song_id>', methods=['DELETE'])
-def delete_song(song_id):
-    filename = database.delete_song(song_id)
-    if filename:
-        try:
-            os.remove(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        except:
-            pass
-        return jsonify({'message': 'Song deleted successfully'}), 200
-    else:
-        return jsonify({'error': 'Song not found'}), 404
-
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)
