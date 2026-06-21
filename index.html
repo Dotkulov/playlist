@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мой Плейлист</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Частицы фона -->
+        <div class="particles" id="particles"></div>
+        
+        <!-- Модальное окно входа -->
+        <div class="modal" v-if="showLoginModal" @click.self="showLoginModal = false">
+            <div class="modal-content login-modal">
+                <div class="modal-header">
+                    <h2><i class="fas fa-user-shield"></i> Вход в админку</h2>
+                    <button @click="showLoginModal = false" class="modal-close">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="login-form">
+                    <div class="input-group">
+                        <i class="fas fa-user input-icon"></i>
+                        <input v-model="loginForm.username" placeholder="Логин" class="input-field">
+                    </div>
+                    <div class="input-group">
+                        <i class="fas fa-lock input-icon"></i>
+                        <input v-model="loginForm.password" type="password" placeholder="Пароль" class="input-field" @keyup.enter="login">
+                    </div>
+                    <button @click="login" class="btn btn-primary btn-full">
+                        <i class="fas fa-sign-in-alt"></i> Войти
+                    </button>
+                    <p v-if="loginError" class="error-text">{{ loginError }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Модальное окно редактирования -->
+        <div class="modal" v-if="showEditModal" @click.self="closeEditModal">
+            <div class="modal-content edit-modal">
+                <div class="modal-header">
+                    <h2><i class="fas fa-edit"></i> Редактировать трек</h2>
+                    <button @click="closeEditModal" class="modal-close">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="edit-form">
+                    <div class="input-group">
+                        <i class="fas fa-music input-icon"></i>
+                        <input v-model="editSong.title" placeholder="Название" class="input-field">
+                    </div>
+                    <div class="input-group">
+                        <i class="fas fa-user input-icon"></i>
+                        <input v-model="editSong.artist" placeholder="Исполнитель" class="input-field">
+                    </div>
+                    <div class="input-group">
+                        <i class="fas fa-link input-icon"></i>
+                        <input v-model="editSong.url" placeholder="Ссылка на MP3" class="input-field">
+                    </div>
+                    <div class="input-group">
+                        <i class="fas fa-image input-icon"></i>
+                        <input v-model="editSong.cover" placeholder="Ссылка на обложку" class="input-field">
+                    </div>
+                    <div class="edit-actions">
+                        <button @click="updateSong" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Сохранить
+                        </button>
+                        <button @click="closeEditModal" class="btn btn-secondary">
+                            <i class="fas fa-times"></i> Отмена
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <header>
+                <div class="header-content">
+                    <div>
+                        <h1>
+                            <i class="fas fa-headphones"></i> 
+                            <span class="gradient-text"> Мой Плейлист</span>
+                        </h1>
+                        <p class="subtitle">
+                            <i class="fas fa-music"></i> 
+                            {{ songs.length }} треков в коллекции
+                        </p>
+                    </div>
+                    <div class="header-actions">
+                        <span v-if="isLoggedIn" class="admin-badge">
+                            <i class="fas fa-crown"></i> Админ
+                        </span>
+                        <button v-if="!isLoggedIn" @click="showLoginModal = true" class="btn btn-glass">
+                            <i class="fas fa-user-shield"></i> Админ
+                        </button>
+                        <button v-if="isLoggedIn" @click="logout" class="btn btn-glass">
+                            <i class="fas fa-sign-out-alt"></i> Выйти
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Админ-панель -->
+            <div class="admin-panel" v-if="isLoggedIn">
+                <div class="panel-header">
+                    <h3><i class="fas fa-plus-circle"></i> Добавить трек</h3>
+                </div>
+                <div class="admin-form">
+                    <div class="form-grid">
+                        <div class="input-group">
+                            <i class="fas fa-music input-icon"></i>
+                            <input v-model="newSong.title" placeholder="Название" class="input-field">
+                        </div>
+                        <div class="input-group">
+                            <i class="fas fa-user input-icon"></i>
+                            <input v-model="newSong.artist" placeholder="Исполнитель" class="input-field">
+                        </div>
+                    </div>
+                    
+                    <div class="upload-grid">
+                        <div class="upload-area cover-upload" @dragover.prevent @drop.prevent="handleCoverDrop">
+                            <div class="upload-content">
+                                <i class="fas fa-image"></i>
+                                <p>Обложка</p>
+                                <input type="file" @change="handleCoverUpload" accept="image/*" hidden ref="coverInput">
+                                <button @click="$refs.coverInput.click()" class="btn btn-secondary btn-sm">Выбрать</button>
+                            </div>
+                            <div v-if="coverPreview" class="cover-preview">
+                                <img :src="coverPreview" alt="Обложка">
+                                <button @click="removeCover" class="remove-cover">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="upload-area audio-upload" @dragover.prevent @drop.prevent="handleAudioDrop">
+                            <div class="upload-content">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                                <p>MP3 файл</p>
+                                <input type="file" @change="handleAudioUpload" accept=".mp3,.wav,.ogg" hidden ref="audioInput">
+                                <button @click="$refs.audioInput.click()" class="btn btn-secondary btn-sm">Выбрать</button>
+                            </div>
+                            <div v-if="uploadedFile" class="uploaded-file">
+                                <i class="fas fa-check-circle"></i>
+                                {{ uploadedFile.name }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="uploadProgress" class="progress-bar">
+                        <div class="progress-fill" :style="{ width: uploadProgress + '%' }"></div>
+                        <span class="progress-text">{{ uploadProgress }}%</span>
+                    </div>
+
+                    <button @click="addSong" class="btn btn-primary btn-full btn-glow">
+                        <i class="fas fa-plus"></i> Добавить в плейлист
+                    </button>
+                </div>
+            </div>
+
+            <!-- Список песен -->
+            <div class="songs-grid">
+                <div v-for="(song, index) in songs" :key="song.id" 
+                     class="song-card" 
+                     :class="{ playing: currentSong && currentSong.id === song.id }"
+                     :style="{ animationDelay: (index * 0.05) + 's' }">
+                    <div class="song-cover">
+                        <img :src="song.cover || 'https://via.placeholder.com/300/1a1a2e/667eea?text=🎵'" :alt="song.title">
+                        <div class="play-overlay" @click="togglePlay(song)">
+                            <div class="play-circle">
+                                <i class="fas" :class="currentSong && currentSong.id === song.id && isPlaying ? 'fa-pause' : 'fa-play'"></i>
+                            </div>
+                        </div>
+                        <div class="song-actions">
+                            <a :href="song.url" download class="action-btn download-btn" title="Скачать">
+                                <i class="fas fa-download"></i>
+                            </a>
+                            <button v-if="isLoggedIn" @click="openEditModal(song)" class="action-btn edit-btn" title="Редактировать">
+                                <i class="fas fa-pen"></i>
+                            </button>
+                            <button v-if="isLoggedIn" @click="deleteSong(song.id)" class="action-btn delete-btn" title="Удалить">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                        <div v-if="currentSong && currentSong.id === song.id && isPlaying" class="playing-indicator">
+                            <span></span><span></span><span></span>
+                        </div>
+                    </div>
+                    <div class="song-info">
+                        <h3>{{ song.title }}</h3>
+                        <p>{{ song.artist }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Аудиоплеер -->
+        <div class="player" v-if="currentSong" :class="{ expanded: isExpanded }">
+            <div class="player-content">
+                <div class="player-info" @click="toggleExpand">
+                    <img :src="currentSong.cover || 'https://via.placeholder.com/60/1a1a2e/667eea?text=🎵'" alt="cover" class="player-cover" :class="{ rotating: isPlaying }">
+                    <div>
+                        <h4>{{ currentSong.title }}</h4>
+                        <p>{{ currentSong.artist }}</p>
+                    </div>
+                </div>
+                <div class="player-controls">
+                    <button @click="prevSong" class="control-btn">
+                        <i class="fas fa-step-backward"></i>
+                    </button>
+                    <button @click="togglePlay(currentSong)" class="control-btn play-btn">
+                        <i class="fas" :class="isPlaying ? 'fa-pause' : 'fa-play'"></i>
+                    </button>
+                    <button @click="nextSong" class="control-btn">
+                        <i class="fas fa-step-forward"></i>
+                    </button>
+                </div>
+                <div class="player-progress">
+                    <span>{{ formatTime(currentTime) }}</span>
+                    <div class="progress-container">
+                        <input type="range" v-model="currentTime" min="0" :max="duration" @input="seek" class="progress-slider">
+                        <div class="progress-track"></div>
+                    </div>
+                    <span>{{ formatTime(duration) }}</span>
+                </div>
+            </div>
+            <div class="player-wave" v-if="isPlaying">
+                <div class="wave-bar" v-for="i in 30" :key="i" :style="{ animationDelay: (i * 0.05) + 's' }"></div>
+            </div>
+        </div>
+
+        <audio ref="audio" @timeupdate="updateTime" @loadedmetadata="updateDuration" @ended="nextSong"></audio>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
