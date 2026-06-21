@@ -1,4 +1,4 @@
-const { createApp, ref, reactive, onMounted } = Vue;
+const { createApp, ref, reactive, onMounted, watch } = Vue;
 
 // Определяем URL бэкенда в зависимости от окружения
 const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
@@ -33,11 +33,95 @@ const app = createApp({
         const showEditModal = ref(false);
         const editSong = reactive({ id: null, title: '', artist: '', url: '', cover: '' });
 
-        // Методы
+        // --- РАБОТА С LOCALSTORAGE ---
+        const STORAGE_KEY = 'playlist_player_state';
+
+        const loadPlayerState = () => {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    if (data.currentSong) {
+                        currentSong.value = data.currentSong;
+                        // Пытаемся найти обновленную версию песни в списке
+                        const updatedSong = songs.value.find(s => s.id === data.currentSong.id);
+                        if (updatedSong) {
+                            currentSong.value = updatedSong;
+                        }
+                    }
+                    if (data.currentTime) currentTime.value = data.currentTime;
+                    if (data.duration) duration.value = data.duration;
+                    if (data.isPlaying !== undefined) isPlaying.value = data.isPlaying;
+                }
+            } catch (e) {
+                console.warn('Ошибка загрузки состояния плеера:', e);
+            }
+        };
+
+        const savePlayerState = () => {
+            try {
+                const data = {
+                    currentSong: currentSong.value,
+                    currentTime: currentTime.value,
+                    duration: duration.value,
+                    isPlaying: isPlaying.value
+                };
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+            } catch (e) {
+                console.warn('Ошибка сохранения состояния плеера:', e);
+            }
+        };
+
+        // Следим за изменениями плеера и сохраняем
+        watch([currentSong, currentTime, duration, isPlaying], () => {
+            savePlayerState();
+        }, { deep: true });
+
+        // --- ЗАПРЕТ ВЫДЕЛЕНИЯ ---
+        const preventSelection = () => {
+            document.addEventListener('selectstart', (e) => {
+                e.preventDefault();
+            });
+            
+            // Также запрещаем выделение через CSS
+            const style = document.createElement('style');
+            style.textContent = `
+                * {
+                    -webkit-user-select: none !important;
+                    -moz-user-select: none !important;
+                    -ms-user-select: none !important;
+                    user-select: none !important;
+                }
+                input, textarea {
+                    -webkit-user-select: text !important;
+                    -moz-user-select: text !important;
+                    -ms-user-select: text !important;
+                    user-select: text !important;
+                }
+            `;
+            document.head.appendChild(style);
+        };
+
+        // --- МЕТОДЫ ---
         const loadSongs = async () => {
             try {
                 const response = await fetch(`${API_BASE_URL}/api/songs`);
-                songs.value = await response.json();
+                const data = await response.json();
+                songs.value = data;
+                
+                // После загрузки песен восстанавливаем текущую песню
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) {
+                    const state = JSON.parse(saved);
+                    if (state.currentSong) {
+                        const updatedSong = songs.value.find(s => s.id === state.currentSong.id);
+                        if (updatedSong) {
+                            currentSong.value = updatedSong;
+                            // Если песня была найдена, обновляем ее в сохраненном состоянии
+                            savePlayerState();
+                        }
+                    }
+                }
             } catch (error) {
                 console.error('Ошибка загрузки песен:', error);
                 showNotification('Ошибка загрузки плейлиста', 'error');
@@ -75,9 +159,19 @@ const app = createApp({
             } else {
                 currentSong.value = song;
                 audio.value.src = song.url;
+                // Восстанавливаем время, если это та же песня
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) {
+                    const state = JSON.parse(saved);
+                    if (state.currentSong && state.currentSong.id === song.id && state.currentTime) {
+                        audio.value.currentTime = state.currentTime;
+                        currentTime.value = state.currentTime;
+                    }
+                }
                 audio.value.play();
                 isPlaying.value = true;
             }
+            savePlayerState();
         };
 
         const prevSong = () => {
@@ -86,8 +180,11 @@ const app = createApp({
             const prevIndex = currentIndex > 0 ? currentIndex - 1 : songs.value.length - 1;
             currentSong.value = songs.value[prevIndex];
             audio.value.src = currentSong.value.url;
+            audio.value.currentTime = 0;
+            currentTime.value = 0;
             audio.value.play();
             isPlaying.value = true;
+            savePlayerState();
         };
 
         const nextSong = () => {
@@ -96,25 +193,31 @@ const app = createApp({
             const nextIndex = currentIndex < songs.value.length - 1 ? currentIndex + 1 : 0;
             currentSong.value = songs.value[nextIndex];
             audio.value.src = currentSong.value.url;
+            audio.value.currentTime = 0;
+            currentTime.value = 0;
             audio.value.play();
             isPlaying.value = true;
+            savePlayerState();
         };
 
         const updateTime = () => {
             if (audio.value) {
                 currentTime.value = audio.value.currentTime;
+                savePlayerState();
             }
         };
 
         const updateDuration = () => {
             if (audio.value) {
                 duration.value = audio.value.duration;
+                savePlayerState();
             }
         };
 
         const seek = () => {
             if (audio.value) {
                 audio.value.currentTime = currentTime.value;
+                savePlayerState();
             }
         };
 
@@ -222,6 +325,7 @@ const app = createApp({
                     if (currentSong.value && currentSong.value.id === id) {
                         currentSong.value = null;
                         isPlaying.value = false;
+                        localStorage.removeItem(STORAGE_KEY);
                     }
                     showNotification('Песня удалена', 'info');
                 }
@@ -378,15 +482,6 @@ const app = createApp({
             }, 3000);
         };
 
-        // Карточки
-        const handleCardHover = (index) => {
-            // Эффект при наведении на карточку
-        };
-
-        const handleCardLeave = () => {
-            // Эффект при уходе с карточки
-        };
-
         // Создание частиц
         const createParticles = () => {
             const container = document.getElementById('particles');
@@ -463,13 +558,37 @@ const app = createApp({
         // Lifecycle
         onMounted(() => {
             audio.value = document.querySelector('audio');
-            loadSongs();
+            
+            // Сначала загружаем песни
+            loadSongs().then(() => {
+                // Затем восстанавливаем состояние плеера
+                loadPlayerState();
+                
+                // Если есть сохраненная песня, подготавливаем аудио
+                if (currentSong.value) {
+                    audio.value.src = currentSong.value.url;
+                    audio.value.currentTime = currentTime.value;
+                    if (isPlaying.value) {
+                        audio.value.play().catch(() => {
+                            // Если не удалось автоматически воспроизвести (политика браузера)
+                            isPlaying.value = false;
+                        });
+                    }
+                }
+            });
+            
+            // Запрещаем выделение
+            preventSelection();
+            
             createParticles();
             createStars();
             addNotificationStyles();
             
             if (audio.value) {
                 audio.value.addEventListener('ended', nextSong);
+                // Сохраняем время при обновлении
+                audio.value.addEventListener('timeupdate', updateTime);
+                audio.value.addEventListener('loadedmetadata', updateDuration);
             }
         });
 
@@ -515,8 +634,6 @@ const app = createApp({
             handleAudioUpload,
             handleAudioDrop,
             uploadFile,
-            handleCardHover,
-            handleCardLeave,
             showNotification
         };
     }

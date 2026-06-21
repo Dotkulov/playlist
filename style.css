@@ -1,3 +1,30 @@
+/* Запрет выделения для всего приложения */
+* {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Разрешаем выделение только в полях ввода */
+input, textarea, [contenteditable="true"] {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+}
+
+/* Убираем синюю подсветку при клике на мобильных */
+* {
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Курсор при наведении на кликабельные элементы */
+.clickable {
+    cursor: pointer;
+}
+
 * {
     margin: 0;
     padding: 0;
