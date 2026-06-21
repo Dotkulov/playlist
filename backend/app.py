@@ -3,15 +3,23 @@ import uuid
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import database
+import cloudinary
+import cloudinary.uploader
 
 app = Flask(__name__)
 CORS(app)
 
-# Настройки загрузки
+# Настройка Cloudinary
+cloudinary.config(
+    cloud_name = "dmeezmrja",
+    api_key = "725118181393239",
+    api_secret = "9y9PoiRmU-qk_2IEbwh6_PjANw8"
+)
+
+# Настройки загрузки (для локального использования)
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'mp3', 'wav', 'ogg'}
 
-# Создаем папку для загрузок
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
@@ -52,19 +60,23 @@ def upload_file():
     if not allowed_file(file.filename):
         return jsonify({'error': 'Invalid file type. Only MP3, WAV, OGG allowed'}), 400
     
-    ext = file.filename.rsplit('.', 1)[1].lower()
-    filename = f"{uuid.uuid4().hex}.{ext}"
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(filepath)
-    
-    # Для Render используем внешний URL
-    if os.environ.get('RENDER'):
-        base_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://your-app.onrender.com')
-        file_url = f"{base_url}/uploads/{filename}"
-    else:
-        file_url = f"http://localhost:5000/uploads/{filename}"
-    
-    return jsonify({'url': file_url, 'filename': filename}), 201
+    try:
+        # Загрузка в Cloudinary
+        result = cloudinary.uploader.upload(
+            file,
+            resource_type = "auto",
+            folder = "playlist",
+            public_id = f"{uuid.uuid4().hex}"
+        )
+        file_url = result['secure_url']
+        
+        return jsonify({
+            'url': file_url, 
+            'filename': file.filename
+        }), 201
+    except Exception as e:
+        print(f"Cloudinary error: {str(e)}")
+        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
