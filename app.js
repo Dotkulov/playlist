@@ -309,6 +309,9 @@ const app = createApp({
                     uploadProgress.value = 100;
                     setTimeout(() => uploadProgress.value = 0, 2000);
                     showNotification('Файл успешно загружен! 📁', 'success');
+                } else {
+                    const errorData = await response.json();
+                    showNotification(`Ошибка: ${errorData.error || 'Неизвестная ошибка'}`, 'error');
                 }
             } catch (error) {
                 console.error('Ошибка загрузки файла:', error);
@@ -353,7 +356,6 @@ const app = createApp({
                 box-shadow: 0 20px 60px rgba(0,0,0,0.5);
                 animation: slideInRight 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
                 max-width: 400px;
-                pointer-events: none;
             `;
             
             const colors = {
